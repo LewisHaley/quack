@@ -18,11 +18,13 @@ _ARGS = None
 
 def _setup():
     """Setup parser if executed script directly."""
-    parser = argparse.ArgumentParser(description='Quack builder')
+    parser = argparse.ArgumentParser(
+        description='Quack builder',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
-        '-y', '--yaml', help='Provide custom yaml. default: quack.yaml')
+        '-y', '--yaml', default='quack.yaml', help='Provide custom yaml')
     parser.add_argument(
-        '-p', '--profile', help='Run selected profile. default: init',
+        '-p', '--profile', default='init', help='Run selected profile',
         nargs='?')
     return parser.parse_args()
 
@@ -43,7 +45,7 @@ def _create_dir(directory):
 
 def _get_config():
     """Return yaml configuration."""
-    yaml_file = (hasattr(_ARGS, 'yaml') and _ARGS.yaml) or 'quack.yaml'
+    yaml_file = (hasattr(_ARGS, 'yaml') and _ARGS.yaml)
     if os.path.isfile(yaml_file):
         with open(yaml_file) as file_pointer:
             return yaml.load(file_pointer)
@@ -226,8 +228,6 @@ def main():
         config = _prompt_to_create()
         if not config:
             return
-    if not _ARGS.profile:
-        _ARGS.profile = 'init'
     profile = config.get('profiles', {}).get(_ARGS.profile, {})
     # print(_ARGS.profile, profile)
     stats = _run_tasks(config, profile)
