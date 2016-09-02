@@ -15,6 +15,47 @@ import yaml
 
 _ARGS = None
 
+class Module(object):
+
+    """A container for module metadata."""
+
+    def __init__(
+            self, name, repository,
+            path='', branch='master', hexsha=None, tag=None, isfile=False):
+        """Initialise a new `Module` object.
+
+        :param str name: the name of the module
+        :param str repository: the URI for the repository to clone
+        :param str path: the path to clone the repository into. Default
+        :param str branch: the branch name to checkout. Default: master
+        :param str hexsha: the SHA of the commit to checkout. Mutually exclusive
+            with `tag`.
+        :param str tab: the tag of the commit to checkout. Mutually exclusive
+            with `hexsha`.
+        :param bool isfile:
+        """
+        self.name = name
+        self.repository = repository
+        self.path = path
+        self.branch = branch
+        self.hexsha = hexsha
+        self.tag = tag
+        self.isfile = isfile
+
+    @staticmethod
+    def from_config(name, config):
+        """Generate a `Module` instance from a configuration dictionary.
+
+        :param str name: the name of the module
+        :param dict config: the configuration as read from the YAML file
+        """
+        try:
+            config['repository']
+        except KeyError:
+            sys.stderr.write("Module does not specify a 'repository'\n")
+            sys.exit(1)
+        return Module(name, **config)
+
 
 def _setup():
     """Setup parser if executed script directly."""
@@ -52,6 +93,16 @@ def _get_config():
     return
 
 
+def _iter_modules(config):
+    """Iterate `Module` objects as defined by `config`.
+
+    :type config: dict
+    """
+    module_list = config.get('modules', {})
+    for name, config in module_list.items():
+        yield Module.from_config(name, config)
+
+
 def _fetch_modules(config, specific_module=None):
     """Fetch git submodules."""
     module_list = config.get('modules')
@@ -66,49 +117,46 @@ def _fetch_modules(config, specific_module=None):
         with open('.gitignore', 'r') as file_pointer:
             ignore_list = list(set(file_pointer.read().split('\n')))
     repo = git.Repo('.')
-    for module in module_list.items():
-        if specific_module and specific_module != module[0]:
+    for module in _iter_modules(config):
+        if specific_module and specific_module != module.name:
             continue
-        tag = module[1].get('tag')
-        hexsha = module[1].get('hexsha')
-        if tag and hexsha:
-            print('%s: Cannot be both tag & hexsha.' % module[0])
+        if module.tag and module.hexsha:
+            print('%s: Cannot be both tag & hexsha.' % module.name)
             continue
-        print('Cloning: ' + module[1]['repository'])
+        print('Cloning: ' + module.repository)
         sub_module = repo.create_submodule(
-            module[0], modules + '/' + module[0],
-            url=module[1]['repository'],
-            branch=module[1].get('branch', 'master')
+            module.name, modules + '/' + module.name,
+            url=module.repository,
+            branch=module.branch
         )
 
-        if tag:
+        if module.tag:
             subprocess.call(
-                ['git', 'checkout', '--quiet', 'tags/' + tag],
-                cwd=modules + '/' + module[0])
-            tag = ' (' + tag + ') '
-        elif hexsha:
+                ['git', 'checkout', '--quiet', 'tags/' + module.tag],
+                cwd=modules + '/' + module.name)
+            checkout_target = module.tag
+        elif module.hexsha:
             subprocess.call(
-                ['git', 'checkout', '--quiet', hexsha],
-                cwd=modules + '/' + module[0])
-            hexsha = ' (' + hexsha + ')'
+                ['git', 'checkout', '--quiet', module.hexsha],
+                cwd=modules + '/' + module.name)
+            checkout_target = module.hexsha
         else:
-            hexsha = ' (' + sub_module.hexsha + ')'
+            checkout_target = sub_module.hexsha
 
-        path = module[1].get('path', '')
-        from_path = '%s/%s/%s' % (modules, module[0], path)
+        from_path = '%s/%s/%s' % (modules, module.name, module.path)
         is_exists = os.path.exists(from_path)
-        if (path and is_exists) or not path:
-            if module[1].get('isfile'):
-                if os.path.isfile(module[0]):
-                    os.remove(module[0])
-                shutil.copyfile(from_path, module[0])
+        if (module.path and is_exists) or not module.path:
+            if module.isfile:
+                if os.path.isfile(module.name):
+                    os.remove(module.name)
+                shutil.copyfile(from_path, module.name)
             else:
-                _remove_dir(module[0])
+                _remove_dir(module.name)
                 shutil.copytree(
-                    from_path, module[0],
+                    from_path, module.name,
                     ignore=shutil.ignore_patterns('.git*'))
         elif not is_exists:
-            print('%s folder does not exists. Skipped.' % path)
+            print('%s folder does not exists. Skipped.' % module.path)
 
         # Remove submodule.
         sub_module.remove()
@@ -116,13 +164,13 @@ def _fetch_modules(config, specific_module=None):
             subprocess.call('rm .gitmodules'.split())
             subprocess.call('git rm --quiet --cached .gitmodules'.split())
 
-        print('Cloned: ' + module[0] + (tag or hexsha))
+        print('Cloned: %s (%s)' % (module.name, checkout_target))
 
         if config.get('gitignore'):
             with open('.gitignore', 'a') as file_pointer:
-                if module[0] not in ignore_list:
-                    file_pointer.write('\n' + module[0])
-                    ignore_list.append(module[0])
+                if module.name not in ignore_list:
+                    file_pointer.write('\n' + module.name)
+                    ignore_list.append(module.name)
 
 
 def _clean_modules(config, specific_module=None):
