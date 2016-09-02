@@ -103,6 +103,25 @@ def _iter_modules(config):
         yield Module.from_config(name, config)
 
 
+def _nice_call(command, **popenkwargs):
+    """Thin wrapper around `subprocess.Popen`, with nicer logging.
+
+    :param str command: the entire command to execute
+    :param popenkwargs: arguments to pass to `subprocess.Popen`
+    """
+    workdir = popenkwargs.get('cwd', os.getcwd())
+    print("Executing %r in %s..." % (command, workdir))
+    p = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popenkwargs)
+    ret = p.wait()
+    stdout, stderr = p.communicate()
+    if ret == 0:
+        print("Got stdout:\n%s" % stdout)
+    else:
+        sys.stderr.write("Command failed with status %d, stderr=\n%s" % stderr)
+        sys.exit(1)
+
+
 def _fetch_modules(config, specific_module=None):
     """Fetch git submodules."""
     module_list = config.get('modules')
@@ -131,13 +150,13 @@ def _fetch_modules(config, specific_module=None):
         )
 
         if module.tag:
-            subprocess.call(
-                ['git', 'checkout', '--quiet', 'tags/' + module.tag],
+            _nice_call(
+                'git checkout --quiet tags/%s' % tag,
                 cwd=modules + '/' + module.name)
             checkout_target = module.tag
         elif module.hexsha:
-            subprocess.call(
-                ['git', 'checkout', '--quiet', module.hexsha],
+            _nice_call(
+                'git checkout --quiet %s' % hexsha,
                 cwd=modules + '/' + module.name)
             checkout_target = module.hexsha
         else:
@@ -161,8 +180,8 @@ def _fetch_modules(config, specific_module=None):
         # Remove submodule.
         sub_module.remove()
         if os.path.isfile('.gitmodules'):
-            subprocess.call('rm .gitmodules'.split())
-            subprocess.call('git rm --quiet --cached .gitmodules'.split())
+            _nice_call('rm .gitmodules')
+            _nice_call('git rm --quiet --cached .gitmodules')
 
         print('Cloned: %s (%s)' % (module.name, checkout_target))
 
@@ -189,7 +208,7 @@ def _run_nested_quack(dependency):
     quack = dependency[1]
     slash_index = quack.rfind('/')
     command = ['quack']
-    module = '.'
+    module = os.getcwd()
     if slash_index > 0:
         module = quack[:slash_index]
     colon_index = quack.find(':')
@@ -201,7 +220,8 @@ def _run_nested_quack(dependency):
         command.append(quack[slash_index + 1:colon_index])
     print('Quack..' + module)
     git.Repo.init(module)
-    subprocess.call(command, cwd=module)
+    _create_dir(module)
+    _nice_call(' '.join(command), cwd=module)
     _remove_dir(module + '/.git')
     return True
 
@@ -234,7 +254,7 @@ def _run_tasks(config, profile):
             _run_nested_quack(('quack', command.replace('quack:', '')))
         elif is_cmd:
             cmd = command.replace('cmd:', '')
-            subprocess.call(cmd.split())
+            _nice_call(cmd)
 
         if is_modules and not is_negate:
             _fetch_modules(config, module)
