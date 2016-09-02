@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import textwrap
 import yaml
 
 
@@ -203,11 +204,13 @@ def _prompt_to_create():
     if yes_or_no.lower() == 'y':
         project_name = prompt('Provide project name: ')
         with open('quack.yaml', 'a') as file_pointer:
-            file_pointer.write("""name: %s
-modules:
-profiles:
-  init:
-    tasks: ['modules']""" % project_name)
+            file_pointer.write(textwrap.dedent("""
+                name: %s
+                modules:
+                profiles:
+                  init:
+                    tasks: ['modules']
+                """ % project_name).strip())
         return _get_config()
     return
 
